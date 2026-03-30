@@ -4,6 +4,7 @@
 //! The main `update()` function routes InputEvents to the appropriate handler modules.
 
 pub mod ask_user;
+mod banner;
 mod dialog;
 mod input;
 mod message;
@@ -20,6 +21,7 @@ pub use input::find_image_file_by_name;
 pub use text_selection::tick_selection_auto_scroll;
 
 use crate::app::{AppState, InputEvent, OutputEvent, PendingUserMessage};
+use crate::services::handlers::banner::handle_banner_mouse_click;
 use ratatui::layout::Size;
 use tokio::sync::mpsc::Sender;
 
@@ -59,6 +61,14 @@ fn flush_pending_user_messages_if_idle(
 
     // Take pending revert index if set (will be None on normal messages)
     let revert_index = state.pending_revert_index.take();
+
+    // Dismiss the onboarding banner once the user sends their first message.
+    if state.banner_message.is_some() {
+        state.banner_message = None;
+        state.banner_click_regions.clear();
+        state.banner_dismiss_region = None;
+        state.banner_area = None;
+    }
 
     match output_tx.try_send(OutputEvent::UserMessage(
         final_input,
@@ -1307,6 +1317,9 @@ pub fn update(
         InputEvent::SetSessions(sessions) => {
             misc::handle_set_sessions(state, sessions);
         }
+        InputEvent::SetBannerMessage(text, style) => {
+            misc::handle_set_banner_message(state, text, style);
+        }
         InputEvent::StartLoadingOperation(operation) => {
             misc::handle_start_loading_operation(state, operation);
         }
@@ -1332,6 +1345,7 @@ pub fn update(
         }
         InputEvent::ApprovalPopupSubmit => {}
         InputEvent::MouseClick(col, row) | InputEvent::MouseDragStart(col, row) => {
+            handle_banner_mouse_click(state, col, row, input_tx, output_tx);
             if state.show_collapsed_messages {
                 // When collapsed popup is open, route directly to text selection
                 // (which handles popup geometry internally)
